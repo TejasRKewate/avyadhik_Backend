@@ -13,16 +13,25 @@ import {
   registerUser,
   loginUser,
   createStaff,
-  getMe
+  getMe,
+  forgetPassword,
+  verifyOtp,
+  resetPassword
 } from "./user.controller.js";
 
 const router = Router();
+
+
 
 // Public: FR-1 (User or Vendor self-registration)
 router.post("/register", validate(registerSchema), registerUser);
 
 // Public: FR-2 (login returns a JWT)
 router.post("/login", validate(loginSchema), loginUser);
+
+router.post("/forget-password", forgetPassword)
+router.post('/verify-otp', verifyOtp)
+router.post("/reset-password", resetPassword)
 
 router.get("/me", verifyToken, getMe)
 

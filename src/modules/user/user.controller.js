@@ -1,5 +1,10 @@
 import * as userService from "./user.service.js";
 import User from './user.model.js'
+import { generateOTP } from "../../utils/generateOtp.js";
+import { sendEmail } from "../../utils/sendEmail.js";
+import forgetPasswordTemplate from "../../utils/forgetPasswordTemplate.js";
+import bcrypt from 'bcryptjs'
+import LoggedverifyEmailTemplate from "../../utils/LoggedEmailVerify.js";
 
 // =======================================
 // ERROR HANDLER
@@ -155,22 +160,110 @@ export const getMe = async (req, res) => {
   }
 }
 
-export const verifyEmail = async (req, res) => {
-  try {
-    const { code } = req.body
+// export const verifyEmail = async (req, res) => {
+//   try {
+//     const { email } = req.body
 
-    const user = await User.findOne({ _id: code })
+//     const user = await User.findOne({ email })
+//     if (!user) {
+//       return res.status(400).json({
+//         message: "user not exists"
+//       })
+//     }
+
+//     const updateUser = await User.updateOne({ _id: code }, {
+//       isVerified: true
+//     })
+//     return res.status(200).json({
+//       message: "Verification link sent on your email"
+//     })
+//   } catch (error) {
+//     return res.status(500).json({
+//       message: error.message
+//     })
+//   }
+// }
+
+export const verifyEmail = async (req, res) => {
+
+  try {
+    const userId = req?.user
+    const { email } = req.body
+    const user = await User.findOne({ email })
     if (!user) {
       return res.status(400).json({
-        message: "user not exists"
+        message: "user not exsits"
       })
     }
 
-    const updateUser = await User.updateOne({ _id: code }, {
-      isVerified: true
+    if (user.isVerified == false) {
+      return res.json({
+        message: "Please verify your email"
+      })
+    }
+
+    const otp = generateOTP()
+    const expireTime = new Date(Date.now() + 60 * 60 * 1000)
+
+    const update = await User.findByIdAndUpdate(user._id, {
+      verificationOtp: otp,
+      verificationOtpExpiry: new Date(expireTime).toISOString()
+    })
+
+    await sendEmail({
+      sendTo: email,
+      subject: "Forget Password",
+      html: LoggedverifyEmailTemplate({
+        name: user.name, otp
+      })
     })
     return res.status(200).json({
-      message: "Verification link sent on your email"
+      message: "Opt sent sucessfully",
+
+    })
+  } catch (error) {
+    console.log(error)
+    return res.status(500).json({
+      message: error.message
+    })
+  }
+}
+
+export const forgetPassword = async (req, res) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      return res.status(400).json({
+        message: "Provide email"
+      })
+    }
+
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(400).json({
+        message: "Provide email"
+      })
+    }
+
+    const otp = generateOTP()
+    const expireTime = new Date(Date.now() + 60 * 60 * 1000)
+
+    const update = await User.findByIdAndUpdate(user._id, {
+      forgetPasswordOtp: otp,
+      forgetPasswordOtpExpiry: new Date(expireTime).toISOString()
+    })
+
+    await sendEmail({
+      sendTo: email,
+      subject: "Forget Password",
+      html: forgetPasswordTemplate({
+        name: user.name, otp
+      })
+    })
+
+    return res.status(200).json({
+      message: "Opt sent sucessfully",
+
     })
   } catch (error) {
     return res.status(500).json({
@@ -179,26 +272,83 @@ export const verifyEmail = async (req, res) => {
   }
 }
 
-// export const checkEmail = async (req, res) => {
-//   try {
-//     const { email, code } = req.body
+export const verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body
 
-//     const user = await findOne({ email })
-//     if (!user) {
-//       return res.status(400).json({
-//         message: "user not exists"
-//       })
-//     }
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(400).json({
+        message: "Email not found",
+        success: false
+      })
+    }
 
-//     if (code !== user._id) {
-//       return res.status(400).json({
-//         message:"verification failed"
-//       })
-//     }
+    const currentTime = new Date().toISOString()
+    console.log(currentTime)
+    if (user.forgetPasswordOtpExpiry < currentTime) {
+      return res.status(400).json({
+        message: "Otp is expire",
+        success: false
+      })
+    }
 
-//   } catch (error) {
-//     return res.status(500).json({
-//       message: error.message
-//     })
-//   }
-// }
+    if (otp !== user.forgetPasswordOtp) {
+      return res.status(400).json({
+        message: "Invalid Otp",
+        success: false
+      })
+    }
+
+    // const update = await userModel.updateMany({ _id: user._id }, {
+    //     forget_password_otp: null,
+    //     forget_password_expiry: null
+    // })
+
+
+    return res.json({
+      message: "OTP verified suuccessful",
+      success: true
+    })
+
+
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+      success: false
+    })
+  }
+}
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword, confirmPassword } = req.body
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found"
+      })
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        message: "password does not match"
+      })
+    }
+
+    const hashPassword = await bcrypt.hash(newPassword, 10)
+
+    const update = await User.findOneAndUpdate(user._id, {
+      password: hashPassword
+    })
+
+    return res.json({
+      message: "password update successfully",
+    })
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+
+    })
+  }
+}

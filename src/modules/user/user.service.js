@@ -117,46 +117,39 @@ const createAccount = async ({ name, email, phone, password, role }) => {
 // REGISTER (FR-1)
 // =======================================
 
+
 export const registerUser = async (body) => {
 
   const role = body.role || "user";
 
-  // Second safety net: even if validation is changed later,
-  // nobody can register themselves as admin, manager or viewer.
+  // Check public registration role
   if (!SELF_REGISTER_ROLES.includes(role)) {
-
     throw createError(403, "This role cannot be registered publicly");
-
   }
 
+  // Create user
   const user = await createAccount({ ...body, role });
 
-  // const verifyEmailUrl = `http://localhost:5173/verifyEmail/${user._id}`
+  // Email verification URL
+  const verifyEmailUrl = `http://localhost:5173/verifyEmail?code=${user._id}`;
 
-  const VerifyEmailUrl = `http://localhost:5173/verifyEmail?code=${save?._id}`
-  const name = user.name
-
+  // Send verification email
   const verifyEmail = await sendEmail({
-    sendTo: email,
-    subject: "Verify email from binkeyit",
+    sendTo: user.email,
+    subject: "Verify email from Avyadhik",
     html: verifyEmailTemplate({
-      name,
-      url: VerifyEmailUrl
+      name: user.name,
+      url: verifyEmailUrl
     })
-  })
+  });
 
-  console.log(verifyEmail)
+  console.log("Verification email:", verifyEmail);
 
   return {
-
     user: toSafeUser(user),
-
     token: signToken(user),
-
   };
-
 };
-
 
 // =======================================
 // LOGIN (FR-2)

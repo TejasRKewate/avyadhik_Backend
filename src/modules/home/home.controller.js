@@ -5,7 +5,8 @@ import * as homeService from "./home.service.js";
 // HELPERS
 // =======================================
 
-
+// Service errors carry a statusCode (404, 409, ...).
+// Anything else is an unexpected 500.
 const handleError = (res, err, label) => {
 
   if (err.statusCode) {

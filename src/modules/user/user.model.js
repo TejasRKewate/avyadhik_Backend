@@ -31,7 +31,22 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-
+    verificationOtp: {
+      type: String,
+      default: null
+    },
+    verificationOtpExpiry: {
+      type: Date,
+      default: null
+    },
+    forgetPasswordOtp: {
+      type: String,
+      default: null
+    },
+    forgetPasswordOtpExpiry: {
+      type: Date,
+      default: null
+    },
     password: {
       type: String,
       required: [true, "Password is required"],
