@@ -160,74 +160,129 @@ export const getMe = async (req, res) => {
   }
 }
 
-// export const verifyEmail = async (req, res) => {
-//   try {
-//     const { email } = req.body
 
+export const verifyEmail = async (req, res) => {
+  try {
+
+    // Get logged-in user ID from authentication middleware
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized user"
+      });
+    }
+
+    // Find logged-in user
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User does not exist"
+      });
+    }
+
+    // if (user.isVerified === true) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Your email is already verified"
+    //   });
+    // }
+
+    if (!user.isVerified) {
+      // Generate OTP and send verification email
+    } else {
+      return res.status(400).json({
+        message: "Your email is already verified"
+      });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+
+    // OTP expires after 10 minutes
+    const expireTime = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Save OTP in database
+    user.verificationOtp = otp;
+    user.verificationOtpExpiry = expireTime;
+
+    await user.save();
+
+    // Send verification email
+    await sendEmail({
+      sendTo: user.email,
+      subject: "Verify Your Email",
+      html: LoggedverifyEmailTemplate({
+        name: user.name,
+        otp
+      })
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Verification OTP sent successfully"
+    });
+
+  } catch (error) {
+
+    console.error("Verify Email Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+
+// export const verifyEmail = async (req, res) => {
+
+//   try {
+//     const userId = req?.user
+//     const { email } = req.body
 //     const user = await User.findOne({ email })
 //     if (!user) {
 //       return res.status(400).json({
-//         message: "user not exists"
+//         message: "user not exsits"
 //       })
 //     }
 
-//     const updateUser = await User.updateOne({ _id: code }, {
-//       isVerified: true
+//     if (!user.isVerified) {
+//       return res.json({
+//         message: "Please verify your email"
+//       })
+//     }
+
+//     const otp = generateOTP()
+//     const expireTime = new Date(Date.now() + 60 * 60 * 1000)
+
+//     const update = await User.findByIdAndUpdate(user._id, {
+//       verificationOtp: otp,
+//       verificationOtpExpiry: new Date(expireTime).toISOString()
+//     })
+
+//     await sendEmail({
+//       sendTo: email,
+//       subject: "Forget Password",
+//       html: LoggedverifyEmailTemplate({
+//         name: user.name, otp
+//       })
 //     })
 //     return res.status(200).json({
-//       message: "Verification link sent on your email"
+//       message: "Opt sent sucessfully",
+
 //     })
 //   } catch (error) {
+//     console.log(error)
 //     return res.status(500).json({
 //       message: error.message
 //     })
 //   }
 // }
-
-export const verifyEmail = async (req, res) => {
-
-  try {
-    const userId = req?.user
-    const { email } = req.body
-    const user = await User.findOne({ email })
-    if (!user) {
-      return res.status(400).json({
-        message: "user not exsits"
-      })
-    }
-
-    if (user.isVerified == false) {
-      return res.json({
-        message: "Please verify your email"
-      })
-    }
-
-    const otp = generateOTP()
-    const expireTime = new Date(Date.now() + 60 * 60 * 1000)
-
-    const update = await User.findByIdAndUpdate(user._id, {
-      verificationOtp: otp,
-      verificationOtpExpiry: new Date(expireTime).toISOString()
-    })
-
-    await sendEmail({
-      sendTo: email,
-      subject: "Forget Password",
-      html: LoggedverifyEmailTemplate({
-        name: user.name, otp
-      })
-    })
-    return res.status(200).json({
-      message: "Opt sent sucessfully",
-
-    })
-  } catch (error) {
-    console.log(error)
-    return res.status(500).json({
-      message: error.message
-    })
-  }
-}
 
 export const forgetPassword = async (req, res) => {
   try {

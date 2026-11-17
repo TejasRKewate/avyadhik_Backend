@@ -16,7 +16,8 @@ import {
   getMe,
   forgetPassword,
   verifyOtp,
-  resetPassword
+  resetPassword,
+  verifyEmail
 } from "./user.controller.js";
 
 const router = Router();
@@ -32,6 +33,7 @@ router.post("/login", validate(loginSchema), loginUser);
 router.post("/forget-password", forgetPassword)
 router.post('/verify-otp', verifyOtp)
 router.post("/reset-password", resetPassword)
+router.post("/verify-email", verifyToken, verifyEmail)
 
 router.get("/me", verifyToken, getMe)
 
