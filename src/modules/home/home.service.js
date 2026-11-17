@@ -1,4 +1,9 @@
+import fs from "fs/promises";
+import path from "path";
+
 import * as homeRepository from "./home.repository.js";
+import * as userRepository from "../user/user.repository.js";
+import * as listingRequestRepository from "../listingRequest/listingRequest.repository.js";
 
 
 // =======================================
@@ -41,7 +46,14 @@ const SEARCH_RADIUS_KM = 100;
 const EARTH_RADIUS_KM = 6378.1;
 
 // Slugs that would clash with a fixed route such as GET /homes/mine
-const RESERVED_SLUGS = ["mine"];
+// ("admin" was added for GET /homes/admin)
+const RESERVED_SLUGS = ["mine", "admin"];
+
+// A home can have at most this many photos
+const MAX_IMAGES = 10;
+
+// Public folder where the uploaded photos are stored
+const IMAGE_URL_PREFIX = "/uploads/homes/";
 
 // GeoJSON order is [longitude, latitude]
 const toPoint = (latitude, longitude) => ({
@@ -149,17 +161,73 @@ const buildUniqueSlug = async (name, citySlug) => {
 
 };
 
+// Adds the four amenity tabs (FR-11) to a populated home
+const withAmenitiesByCategory = (home) => {
+
+  // FR-11: four tabs, one per amenity category
+  const amenitiesByCategory = {
+
+    lifestyle: [],
+
+    medical: [],
+
+    services: [],
+
+    community: [],
+
+  };
+
+  home.amenities.forEach((amenity) => {
+
+    if (amenitiesByCategory[amenity.category]) {
+
+      amenitiesByCategory[amenity.category].push(amenity);
+
+    }
+
+  });
+
+  return { ...home.toObject(), amenitiesByCategory };
+
+};
+
+// Deletes the photo files from disk. A file that is already gone
+// (or cannot be deleted) must not fail the request, so errors are ignored.
+const deleteImageFiles = async (urls) => {
+
+  await Promise.all(
+
+    urls
+
+      .filter((url) => url.startsWith(IMAGE_URL_PREFIX))
+
+      .map((url) =>
+
+        fs
+
+          .unlink(path.join(process.cwd(), "uploads", "homes", path.basename(url)))
+
+          .catch(() => { })
+
+      )
+
+  );
+
+};
+
 
 // =======================================
 // SEARCH HOMES (FR-8, FR-9, FR-30 to FR-37)
 // A home must match every filter that is set.
+// Only listed homes are returned.
 // =======================================
 
 export const searchHomes = async (query) => {
 
   const { page, limit } = query;
 
-  const filter = {};
+  // Unlisted homes never appear on the public site
+  const filter = { isListed: true };
 
   // FR-30: homes in the selected city
   if (query.city) {
@@ -257,7 +325,7 @@ export const searchHomes = async (query) => {
 
 // =======================================
 // GET ONE HOME (FR-10, FR-11)
-// Accepts an id or a slug.
+// Accepts an id or a slug. Public: an unlisted home is "not found".
 // TODO (Review module): add the approved reviews (FR-13).
 // =======================================
 
@@ -269,38 +337,60 @@ export const getHome = async (idOrSlug) => {
 
     : await homeRepository.findBySlugWithDetails(idOrSlug.toLowerCase());
 
+  if (!home || !home.isListed) throw createError(404, "Home not found");
+
+  return withAmenitiesByCategory(home);
+
+};
+
+
+// =======================================
+// ADMIN: GET ONE HOME (listed or unlisted)
+// Used by the admin edit form.
+// =======================================
+
+export const getHomeForAdmin = async (id) => {
+
+  const home = await homeRepository.findByIdWithDetails(id);
+
   if (!home) throw createError(404, "Home not found");
 
-  // FR-11: four tabs, one per amenity category
-  const amenitiesByCategory = {
+  return withAmenitiesByCategory(home);
 
-    lifestyle: [],
+};
 
-    medical: [],
 
-    services: [],
+// =======================================
+// ADMIN: LIST ALL HOMES (listed and unlisted)
+// query.isListed true / false filters, left out means all.
+// =======================================
 
-    community: [],
+export const getAllHomesForAdmin = async (query) => {
 
-  };
+  const { page, limit } = query;
 
-  home.amenities.forEach((amenity) => {
+  const filter = {};
 
-    if (amenitiesByCategory[amenity.category]) {
+  if (query.isListed !== undefined) filter.isListed = query.isListed;
 
-      amenitiesByCategory[amenity.category].push(amenity);
+  const skip = (page - 1) * limit;
 
-    }
+  const [homes, total] = await Promise.all([
 
-  });
+    homeRepository.searchAll(filter, { skip, limit }),
 
-  return { ...home.toObject(), amenitiesByCategory };
+    homeRepository.count(filter),
+
+  ]);
+
+  return { homes, total, page, pages: Math.ceil(total / limit) };
 
 };
 
 
 // =======================================
 // MY HOMES (FR-40)
+// A vendor still sees their own unlisted homes.
 // =======================================
 
 export const getMyHomes = async (vendorId) => {
@@ -312,10 +402,13 @@ export const getMyHomes = async (vendorId) => {
 
 // =======================================
 // CREATE HOME (FR-14, FR-15, FR-40)
-// Goes live immediately. The vendor comes from the JWT, never the body.
+// Goes live immediately.
+//  - vendor: owns the home, the vendor id comes from the JWT.
+//  - admin: must choose the vendor (body.vendor) and may link the
+//    home to a provider request (body.listingRequestId).
 // =======================================
 
-export const createHome = async (body, vendorId, files = []) => {
+export const createHome = async (body, user, files = []) => {
 
   if (files.length === 0) {
 
@@ -323,7 +416,82 @@ export const createHome = async (body, vendorId, files = []) => {
 
   }
 
+  const isAdmin = user.role === "admin";
+
+  // ---------- Who owns the home ----------
+  let vendorId;
+
+  if (isAdmin) {
+
+    if (!body.vendor) throw createError(400, "Please choose a vendor");
+
+    const vendorUser = await userRepository.findById(body.vendor);
+
+    if (!vendorUser || vendorUser.role !== "vendor") {
+
+      throw createError(400, "Vendor not found");
+
+    }
+
+    vendorId = vendorUser._id;
+
+  }
+
+  else {
+
+    // A vendor can only create homes for themselves
+    if (body.vendor || body.listingRequestId) {
+
+      throw createError(403, "Only an admin can use this field");
+
+    }
+
+    vendorId = user._id;
+
+  }
+
+  // ---------- Provider request (checked BEFORE the home is saved) ----------
+  let listingRequest = null;
+
+  if (body.listingRequestId) {
+
+    listingRequest = await listingRequestRepository.findById(
+
+      body.listingRequestId
+
+    );
+
+    if (!listingRequest) throw createError(404, "Listing request not found");
+
+    if (listingRequest.home) {
+
+      throw createError(409, "A home was already created for this request");
+
+    }
+
+  }
+
+  // ---------- References, location and slug ----------
   const city = await assertReferencesExist(body);
+
+  // The admin form sends no coordinates, so the city's are used
+  let latitude = body.latitude;
+
+  let longitude = body.longitude;
+
+  if (latitude === undefined) {
+
+    if (typeof city.latitude !== "number" || typeof city.longitude !== "number") {
+
+      throw createError(400, "This city has no coordinates yet");
+
+    }
+
+    latitude = city.latitude;
+
+    longitude = city.longitude;
+
+  }
 
   const slug = await buildUniqueSlug(body.name, city.slug);
 
@@ -353,18 +521,20 @@ export const createHome = async (body, vendorId, files = []) => {
 
     facilities: body.facilities ?? [],
 
-    location: toPoint(body.latitude, body.longitude),
+    location: toPoint(latitude, longitude),
 
     // Public folder, so the URL can be stored as it is
-    images: files.map((file) => `/uploads/homes/${file.filename}`),
+    images: files.map((file) => `${IMAGE_URL_PREFIX}${file.filename}`),
 
     vendor: vendorId,
 
   };
 
+  let home;
+
   try {
 
-    return await homeRepository.create(data);
+    home = await homeRepository.create(data);
 
   }
 
@@ -381,13 +551,23 @@ export const createHome = async (body, vendorId, files = []) => {
 
   }
 
+  // The request now points to its home and counts as approved
+  if (listingRequest) {
+
+    await listingRequestRepository.linkHome(listingRequest._id, home._id);
+
+  }
+
+  return home;
+
 };
 
 
 // =======================================
 // UPDATE HOME (admin / manager)
 // Vendors cannot edit (FR-16). Mistakes are corrected by staff (section 8).
-// Images are not changed here. The slug never changes, so links don't break.
+// Images are changed with addImages / removeImages.
+// The slug never changes, so links don't break.
 // =======================================
 
 export const updateHome = async (id, body) => {
@@ -413,5 +593,92 @@ export const updateHome = async (id, body) => {
   }
 
   return homeRepository.updateById(id, data);
+
+};
+
+
+// =======================================
+// ADMIN: LIST OR UNLIST A HOME
+// =======================================
+
+export const setListing = async (id, isListed) => {
+
+  const home = await homeRepository.findById(id);
+
+  if (!home) throw createError(404, "Home not found");
+
+  return homeRepository.updateById(id, { isListed });
+
+};
+
+
+// =======================================
+// ADMIN: ADD IMAGES
+// The files are already saved by the upload middleware.
+// =======================================
+
+export const addImages = async (id, files = []) => {
+
+  if (files.length === 0) {
+
+    throw createError(400, "Choose at least one image");
+
+  }
+
+  const home = await homeRepository.findById(id);
+
+  if (!home) throw createError(404, "Home not found");
+
+  if (home.images.length + files.length > MAX_IMAGES) {
+
+    throw createError(
+
+      400,
+
+      `A home can have at most ${MAX_IMAGES} images (it has ${home.images.length})`
+
+    );
+
+  }
+
+  const urls = files.map((file) => `${IMAGE_URL_PREFIX}${file.filename}`);
+
+  return homeRepository.addImagesById(id, urls);
+
+};
+
+
+// =======================================
+// ADMIN: REMOVE IMAGES
+// Only urls that belong to this home are accepted,
+// and the home must keep at least one image.
+// =======================================
+
+export const removeImages = async (id, urls) => {
+
+  const home = await homeRepository.findById(id);
+
+  if (!home) throw createError(404, "Home not found");
+
+  const notFound = urls.filter((url) => !home.images.includes(url));
+
+  if (notFound.length > 0) {
+
+    throw createError(400, "One or more images do not belong to this home");
+
+  }
+
+  if (home.images.length - urls.length < 1) {
+
+    throw createError(400, "A home must keep at least one image");
+
+  }
+
+  const updated = await homeRepository.removeImagesById(id, urls);
+
+  // Delete the files only after the database was updated
+  await deleteImageFiles(urls);
+
+  return updated;
 
 };

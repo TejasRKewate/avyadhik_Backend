@@ -77,7 +77,8 @@ const homeSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // GeoJSON Point built from the vendor's latitude and longitude.
+    // GeoJSON Point built from the city's latitude and longitude
+    // (or from the vendor's, if they were sent).
     // Note: GeoJSON order is [longitude, latitude].
     location: {
       type: {
@@ -150,6 +151,14 @@ const homeSchema = new mongoose.Schema(
 
     facilities: [{ type: String, enum: FACILITIES }],
 
+    // NEW: false = hidden from the public site, but not deleted.
+    // Homes that already exist in the database have no value for this
+    // field, so see the note below the code.
+    isListed: {
+      type: Boolean,
+      default: true,
+    },
+
   },
 
   { timestamps: true }
@@ -168,6 +177,9 @@ homeSchema.index({ location: "2dsphere" });
 homeSchema.index({ city: 1 });
 
 homeSchema.index({ vendor: 1 });
+
+// NEW: public listing and the admin Listed / Unlisted filter
+homeSchema.index({ isListed: 1 });
 
 
 const Home = mongoose.model("Home", homeSchema);

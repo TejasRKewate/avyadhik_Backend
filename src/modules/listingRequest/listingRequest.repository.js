@@ -61,3 +61,21 @@ export const updateStatusById = (id, status) => {
   );
 
 };
+
+
+// Link the request to the home that was created for it,
+// and mark the request as verified (shown as "Approved").
+// Returns the NEW version (null if not found).
+export const linkHome = (id, homeId) => {
+
+  return ListingRequest.findByIdAndUpdate(
+
+    id,
+
+    { home: homeId, status: "verified" },
+
+    { new: true, runValidators: true }
+
+  );
+
+}; 

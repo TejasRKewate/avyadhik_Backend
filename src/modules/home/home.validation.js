@@ -49,7 +49,8 @@ const homeFields = {
 
   city: objectId.label("City"),
 
-  // Entered by the vendor (section 2.2). Stored as a GeoJSON point.
+  // Optional on create: if they are left out, the service uses the
+  // city's own coordinates. Stored as a GeoJSON point.
   latitude: Joi.number().min(-90).max(90).label("Latitude"),
 
   longitude: Joi.number().min(-180).max(180).label("Longitude"),
@@ -74,25 +75,45 @@ const homeFields = {
 // =======================================
 // CREATE HOME (FR-14)
 // Unknown fields are rejected by validate(), so a vendor cannot send
-// vendor, slug, scores, averageRating or reviewCount.
+// slug, scores, averageRating, reviewCount or isListed.
+//
+// "vendor" is accepted here, but only an admin may use it:
+// the service rejects it for a vendor and requires it for an admin.
+// "listingRequestId" links the new home to a provider request.
 // =======================================
 
-export const createHomeSchema = Joi.object(homeFields).fork(
+export const createHomeSchema = Joi.object(homeFields)
 
-  [
-    "name",
-    "address",
-    "area",
-    "city",
-    "latitude",
-    "longitude",
-    "rentPerMonth",
-    "serviceModels",
-  ],
+  .fork(
 
-  (field) => field.required()
+    [
+      "name",
+      "address",
+      "area",
+      "city",
+      "rentPerMonth",
+      "serviceModels",
+    ],
 
-);
+    (field) => field.required()
+
+  )
+
+  .keys({
+
+    vendor: objectId.label("Vendor"),
+
+    listingRequestId: objectId.label("Listing request"),
+
+  })
+
+  .and("latitude", "longitude")
+
+  .messages({
+
+    "object.and": "Send latitude and longitude together",
+
+  });
 
 
 // =======================================
@@ -145,5 +166,57 @@ export const listHomesQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
 
   limit: Joi.number().integer().min(1).max(50).default(12),
+
+});
+
+
+// =======================================
+// ADMIN: HOMES LIST QUERY
+// GET /homes/admin?isListed=true&page=1&limit=10
+// isListed left out (or empty) means "all homes".
+// =======================================
+
+export const adminListQuerySchema = Joi.object({
+
+  isListed: Joi.boolean().empty(""),
+
+  page: Joi.number().integer().min(1).default(1),
+
+  limit: Joi.number().integer().min(1).max(50).default(10),
+
+});
+
+
+// =======================================
+// ADMIN: LIST OR UNLIST A HOME
+// PATCH /homes/:id/listing   body: { "isListed": false }
+// =======================================
+
+export const setListingSchema = Joi.object({
+
+  isListed: Joi.boolean().required().label("isListed"),
+
+});
+
+
+// =======================================
+// ADMIN: REMOVE IMAGES
+// DELETE /homes/:id/images   body: { "images": ["/uploads/homes/a.jpg"] }
+// The service checks that each url really belongs to this home.
+// =======================================
+
+export const removeImagesSchema = Joi.object({
+
+  images: Joi.array()
+
+    .items(Joi.string().trim().max(300))
+
+    .min(1)
+
+    .unique()
+
+    .required()
+
+    .label("Images"),
 
 });

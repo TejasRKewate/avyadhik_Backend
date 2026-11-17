@@ -15,8 +15,9 @@ import Amenity from "../amenity/amenity.model.js";
 
 // Fields shown on a listing card (FR-9). The vendor is not included.
 // "description" was added so the Browse cards can show a short summary.
+// "isListed" was added so the admin list and "my homes" can show the status.
 const CARD_FIELDS =
-  "name slug description city area rentPerMonth images scores averageRating reviewCount serviceModels lengthOfStay roomTypes";
+  "name slug description city area rentPerMonth images scores averageRating reviewCount serviceModels lengthOfStay roomTypes isListed";
 
 // Adds the related documents the portfolio page needs (FR-10, FR-11).
 // Only the vendor's name is exposed, never email or phone.
@@ -46,6 +47,26 @@ export const search = (filter, { skip, limit }) => {
     .populate("city", "name slug")
 
     .populate("serviceModels", "name slug")
+
+    .sort({ createdAt: -1 })
+
+    .skip(skip)
+
+    .limit(limit);
+
+};
+
+// Admin list: the caller decides the filter, so listed and unlisted homes
+// can both be returned. The vendor's name is included.
+export const searchAll = (filter, { skip, limit }) => {
+
+  return Home.find(filter)
+
+    .select(CARD_FIELDS)
+
+    .populate("city", "name slug")
+
+    .populate("vendor", "name")
 
     .sort({ createdAt: -1 })
 
@@ -118,6 +139,36 @@ export const updateById = (id, data) => {
     runValidators: true,
 
   });
+
+};
+
+// Add image urls to the end of the images array
+export const addImagesById = (id, urls) => {
+
+  return Home.findByIdAndUpdate(
+
+    id,
+
+    { $push: { images: { $each: urls } } },
+
+    { new: true }
+
+  );
+
+};
+
+// Remove the given image urls from the images array
+export const removeImagesById = (id, urls) => {
+
+  return Home.findByIdAndUpdate(
+
+    id,
+
+    { $pull: { images: { $in: urls } } },
+
+    { new: true }
+
+  );
 
 };
 

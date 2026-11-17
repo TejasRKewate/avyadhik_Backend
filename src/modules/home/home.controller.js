@@ -5,8 +5,7 @@ import * as homeService from "./home.service.js";
 // HELPERS
 // =======================================
 
-// Service errors carry a statusCode (404, 409, ...).
-// Anything else is an unexpected 500.
+
 const handleError = (res, err, label) => {
 
   if (err.statusCode) {
@@ -98,6 +97,77 @@ export const getHomes = async (req, res) => {
 
 
 // =======================================
+// ADMIN: LIST ALL HOMES (listed and unlisted)
+// GET /admin  (admin only)
+// Query: isListed, page, limit
+// =======================================
+
+export const getAllHomesAdmin = async (req, res) => {
+
+  try {
+
+    const result = await homeService.getAllHomesForAdmin(req.validatedQuery);
+
+    return res.status(200).json({
+
+      success: true,
+
+      count: result.homes.length,
+
+      total: result.total,
+
+      page: result.page,
+
+      pages: result.pages,
+
+      data: { homes: result.homes },
+
+    });
+
+  }
+
+  catch (err) {
+
+    return handleError(res, err, "GET ALL HOMES (ADMIN)");
+
+  }
+
+};
+
+
+// =======================================
+// ADMIN: GET ONE HOME (listed or unlisted)
+// GET /admin/:id  (admin only)
+// =======================================
+
+export const getHomeAdmin = async (req, res) => {
+
+  try {
+
+    if (sendIfInvalidId(res, req.params.id)) return;
+
+    const home = await homeService.getHomeForAdmin(req.params.id);
+
+    return res.status(200).json({
+
+      success: true,
+
+      data: { home },
+
+    });
+
+  }
+
+  catch (err) {
+
+    return handleError(res, err, "GET HOME (ADMIN)");
+
+  }
+
+};
+
+
+// =======================================
 // MY HOMES (FR-40)
 // GET /mine  (vendor only)
 // =======================================
@@ -163,6 +233,7 @@ export const getHome = async (req, res) => {
 // CREATE HOME (FR-14)
 // POST /  (vendor, admin)  multipart/form-data
 // Image field name: images
+// The whole user is passed, so the service can tell an admin from a vendor.
 // =======================================
 
 export const createHome = async (req, res) => {
@@ -173,7 +244,7 @@ export const createHome = async (req, res) => {
 
       req.body,
 
-      req.user._id,
+      req.user,
 
       req.files
 
@@ -228,6 +299,123 @@ export const updateHome = async (req, res) => {
   catch (err) {
 
     return handleError(res, err, "UPDATE HOME");
+
+  }
+
+};
+
+
+// =======================================
+// ADMIN: LIST OR UNLIST A HOME
+// PATCH /:id/listing  (admin only)
+// Body: { "isListed": true | false }
+// =======================================
+
+export const setListing = async (req, res) => {
+
+  try {
+
+    if (sendIfInvalidId(res, req.params.id)) return;
+
+    const home = await homeService.setListing(
+
+      req.params.id,
+
+      req.body.isListed
+
+    );
+
+    return res.status(200).json({
+
+      success: true,
+
+      message: home.isListed ? "Home listed" : "Home unlisted",
+
+      data: { home },
+
+    });
+
+  }
+
+  catch (err) {
+
+    return handleError(res, err, "SET LISTING");
+
+  }
+
+};
+
+
+// =======================================
+// ADMIN: ADD IMAGES
+// POST /:id/images  (admin only)  multipart/form-data
+// Image field name: images
+// =======================================
+
+export const addHomeImages = async (req, res) => {
+
+  try {
+
+    if (sendIfInvalidId(res, req.params.id)) return;
+
+    const home = await homeService.addImages(req.params.id, req.files);
+
+    return res.status(200).json({
+
+      success: true,
+
+      message: "Images added",
+
+      data: { home },
+
+    });
+
+  }
+
+  catch (err) {
+
+    return handleError(res, err, "ADD HOME IMAGES");
+
+  }
+
+};
+
+
+// =======================================
+// ADMIN: REMOVE IMAGES
+// DELETE /:id/images  (admin only)
+// Body: { "images": ["/uploads/homes/a.jpg"] }
+// =======================================
+
+export const removeHomeImages = async (req, res) => {
+
+  try {
+
+    if (sendIfInvalidId(res, req.params.id)) return;
+
+    const home = await homeService.removeImages(
+
+      req.params.id,
+
+      req.body.images
+
+    );
+
+    return res.status(200).json({
+
+      success: true,
+
+      message: "Images removed",
+
+      data: { home },
+
+    });
+
+  }
+
+  catch (err) {
+
+    return handleError(res, err, "REMOVE HOME IMAGES");
 
   }
 
